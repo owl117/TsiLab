@@ -7,26 +7,20 @@ namespace ConsoleApp
     {
         static void Main(string[] args)
         {
-            new TimeSeriesType(
-                id: "id1",
-                name: "name1",
-                description: "descr1",
-                variables: new TimeSeriesVariable[]
+            try
+            {
+                var stationsProcessor = new StastionsProcessor(
+                    TsiDataClient.AadLoginAsApplicationAsync(Settings.Loaded.ApplicationClientInfo).Result, Settings.Loaded.TsiEnvironmentFqdn);
+                stationsProcessor.UpdateTsmAsync().Wait();
+            }
+            catch (Exception e)
+            {
+                var we = Retry.UnwrapAggregateException<System.Net.WebException>(e);
+                using (var sr = new System.IO.StreamReader(we.Response.GetResponseStream()))
                 {
-                    new TimeSeriesVariable(
-                        kind: TimeSeriesVariable.VariableKind.Aggregate,
-                        value: new TimeSeriesExpression("hello"),
-                        filter: new TimeSeriesExpression("world"),
-                        aggregation: new TimeSeriesExpression("!!!")
-                    )
+                    Console.WriteLine(sr.ReadToEnd());
                 }
-            ).Write("TimeSeriesType.txt");
-            var tsiDataClient = TsiDataClient.AadLoginAsApplicationAsync(Settings.Loaded.ApplicationClientInfo).Result;
-            Console.WriteLine(tsiDataClient.GetEnvironmentsAsync().Result);
-
-            var azureMapsClient = new AzureMapsClient(Settings.Loaded.AzureMapsSubscriptionKey);
-            var x = azureMapsClient.SearchAddressReverseAsync(37.156, -94.5).Result;
-            Console.WriteLine(x.FreeformAddress);
+            }
             return;
             Logger.InitializeTelemetryClient(Settings.Loaded.ApplicationInsightsInstrumentationKey);
             
@@ -35,10 +29,12 @@ namespace ConsoleApp
                 HttpUtils.DefaultConnectionLimit = 18;
 
                 var mainProcessor = new MainProcessor(
+                    Settings.Loaded.ApplicationClientInfo,
                     Settings.Loaded.StorageAccountInfo,
                     Settings.Loaded.TsidCheckpointingTableName,
                     Settings.Loaded.StationObservationsCheckpointingPartitionKey,
-                    Settings.Loaded.EventHubConnectionString);
+                    Settings.Loaded.EventHubConnectionString,
+                    Settings.Loaded.TsiEnvironmentFqdn);
                 
                 mainProcessor.Run().Wait();
             }

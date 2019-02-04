@@ -25,54 +25,87 @@ namespace Engine
 
         public async Task<EnvironmentInfo[]> GetEnvironmentsAsync()
         {
-            return await MakeTsiDataApiCall("GET", "environments", ParseGetEnvironmentsResponse);
+            return await MakeTsiDataApiCall(
+                environmentFqdn: null,
+                method: "GET",
+                path: "environments",
+                writeRequestBody: null,
+                consumeResponseTextReader: ParseGetEnvironmentsResponse);
         }
 
-        public async Task<TimeSeriesType[]> GetTimeSeriesTypesAsync()
+        public async Task<TimeSeriesType[]> GetTimeSeriesTypesAsync(string environmentFqdn)
         {
-            return await MakeTsiDataApiCall("GET", "timeseries/types", ParseGetTimeSeriesTypesResponse);
+            return await MakeTsiDataApiCall(
+                environmentFqdn,
+                "GET",
+                "timeseries/types",
+                writeRequestBody: null,
+                consumeResponseTextReader: ParseGetTimeSeriesTypesResponse);
         }
 
-        public async Task<TimeSeriesType[]> PutTimeSeriesTypesAsync()
+        public async Task<string> PutTimeSeriesTypesAsync(string environmentFqdn, TimeSeriesType[] types)
         {
-            return await MakeTsiDataApiCall("GET", "timeseries/types", ParseGetTimeSeriesTypesResponse);
+            return await MakeTsiDataApiCall(
+                environmentFqdn,
+                "POST",
+                "timeseries/types/$batch",
+                textWriter => WritePutTimeSeriesTypesRequest(textWriter, types),
+                ParsePutTimeSeriesTypesResponse);
         }
 
-        public async Task<TimeSeriesInstance[]> GetTimeSeriesInstancesAsync()
+        public async Task<TimeSeriesInstance[]> GetTimeSeriesInstancesAsync(string environmentFqdn)
         {
-            return await MakeTsiDataApiCall("GET", "timeseries/instances", ParseGetTimeSeriesInstancesResponse);
+            return await MakeTsiDataApiCall(
+                environmentFqdn,
+                "GET",
+                "timeseries/instances",
+                writeRequestBody: null,
+                consumeResponseTextReader: ParseGetTimeSeriesInstancesResponse);
         }
 
         private static EnvironmentInfo[] ParseGetEnvironmentsResponse(TextReader textReader)
         {
             GetEnvironmentsResponse getEnvironmentsResponse = JsonUtils.ParseJson<GetEnvironmentsResponse>(textReader);
-            return (getEnvironmentsResponse?.environments)?? new EnvironmentInfo[0];
+            return (getEnvironmentsResponse?.environments) ?? new EnvironmentInfo[0];
         }
 
         private static TimeSeriesType[] ParseGetTimeSeriesTypesResponse(TextReader textReader)
         {
             GetTimeSeriesTypesResponse getTimeSeriesTypesResponse = JsonUtils.ParseJson<GetTimeSeriesTypesResponse>(textReader);
-            return (getTimeSeriesTypesResponse?.types)?? new TimeSeriesType[0];
+            return (getTimeSeriesTypesResponse?.types) ?? new TimeSeriesType[0];
+        }
+
+        private static void WritePutTimeSeriesTypesRequest(TextWriter textWriter, TimeSeriesType[] types)
+        {
+            JsonUtils.WriteJson(textWriter, new PutTimeSeriesTypesRequest(types));
+        }
+
+        private static string ParsePutTimeSeriesTypesResponse(TextReader textReader)
+        {
+            return textReader.ReadToEnd();
         }
 
         private static TimeSeriesInstance[] ParseGetTimeSeriesInstancesResponse(TextReader textReader)
         {
             GetTimeSeriesInstancesResponse getTimeSeriesInstancesResponse = JsonUtils.ParseJson<GetTimeSeriesInstancesResponse>(textReader);
-            return (getTimeSeriesInstancesResponse?.instances)?? new TimeSeriesInstance[0];
+            return (getTimeSeriesInstancesResponse?.instances) ?? new TimeSeriesInstance[0];
         }
 
         private async Task<TResult> MakeTsiDataApiCall<TResult>(
+            string environmentFqdn,
             string method,
             string path,
-            Func<TextReader, TResult> consumeTextReader)
+            Action<TextWriter> writeRequestBody,
+            Func<TextReader, TResult> consumeResponseTextReader)
         {
             return await HttpUtils.MakeHttpCallAsync(
-                "api.timeseries.azure.com",
+                environmentFqdn ?? "api.timeseries.azure.com",
                 method,
                 path,
                 _accessToken,
                 "TsiDataClient",
-                consumeTextReader,
+                textWriter => { writeRequestBody(textWriter); return "application/json"; },
+                consumeResponseTextReader,
                 new string[] { "api-version=2018-11-01-preview" }); // v1: api-version=2016-12-12 
         }
 
@@ -128,6 +161,11 @@ namespace Engine
 
         private sealed class PutTimeSeriesTypesRequest
         {
+            public PutTimeSeriesTypesRequest(TimeSeriesType[] put)
+            {
+                this.put = put;
+            }
+
             public TimeSeriesType[] put;
         }
 

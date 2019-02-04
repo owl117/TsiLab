@@ -11,9 +11,9 @@ namespace Engine
     {
         private static TimeSpan NormalPassDelay = TimeSpan.FromMinutes(5);
         /// <summary>
-        /// weather.gov limits to 10,000 calls per day per caller.
+        /// weather.gov limits to 10,000 calls 'per day per caller'.
         /// Throttling is indicated by HTTP 403.
-        /// In actuality throttling goes away sooner than a day, just need a long wait. 
+        /// In reality throttling goes away sooner than a day, just needs a long wait. 
         /// </summary>
         private static TimeSpan DelayOn403 = TimeSpan.FromMinutes(30);
         private readonly StastionsProcessor _stationsProcessor;
@@ -22,12 +22,15 @@ namespace Engine
         private readonly EventHubClient _eventHubClient;
 
         public MainProcessor(
+            AzureUtils.ApplicationClientInfo applicationClientInfo,
             AzureUtils.StorageAccountInfo storageAccountInfo,
             string tsidCheckpointingTableName,
             string stationObservationsCheckpointingPartitionKey,
-            string eventHubConnectionString)
+            string eventHubConnectionString,
+            string tsiEnvironmentFqdn)
         {
-            _stationsProcessor = new StastionsProcessor();
+            _stationsProcessor = new StastionsProcessor(
+                TsiDataClient.AadLoginAsApplicationAsync(applicationClientInfo).Result, tsiEnvironmentFqdn);
             _stationObservationsCheckpointing = TsidCheckpointing.CreateAsync(
                 storageAccountInfo, tsidCheckpointingTableName, stationObservationsCheckpointingPartitionKey).Result;
             _stationObservationProcessors = new Dictionary<string, StationObservationsProcessor>();

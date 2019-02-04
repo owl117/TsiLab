@@ -14,7 +14,7 @@ namespace Engine
                 JsonUtils.WriteJson(sr, this);
             }
         }
-        public TimeSeriesType(string id, string name, string description, TimeSeriesVariable[] variables)
+        public TimeSeriesType(string id, string name, string description, Dictionary<string, TimeSeriesVariable> variables)
         {
             Id = id;
             Name = name;
@@ -32,7 +32,7 @@ namespace Engine
         public string Description { get; private set; }
 
         [JsonProperty(PropertyName = "variables")]
-        public TimeSeriesVariable[] Variables { get; private set; }
+        public Dictionary<string, TimeSeriesVariable> Variables { get; private set; }
     }
 }
 

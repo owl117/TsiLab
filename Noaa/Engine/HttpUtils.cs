@@ -15,7 +15,7 @@ namespace Engine
 
         public static async Task<TResult> MakeHttpCallAsync<TResult>(
             string requestUriString, 
-            Func<TextReader, TResult> consumeTextReader,
+            Func<TextReader, TResult> consumeResponseTextReader,
             bool pretendBrowser = false)
         {
             HttpWebRequest request = WebRequest.CreateHttp(requestUriString);
@@ -27,25 +27,36 @@ namespace Engine
             using (HttpWebResponse response = (HttpWebResponse)await request.GetResponseAsync())
             using (StreamReader streamReader = new StreamReader(response.GetResponseStream()))
             {
-                return consumeTextReader(streamReader);
+                return consumeResponseTextReader(streamReader);
             }
         }
 
+        /// <param name="writeRequestBody">Can be null, returns content type.</param>
         public static async Task<TResult> MakeHttpCallAsync<TResult>(
             string host,
             string method,
             string path,
             string accessToken,
             string clientApplicationName,
-            Func<TextReader, TResult> consumeTextReader,
+            Func<TextWriter, string> writeRequestBody,
+            Func<TextReader, TResult> consumeResponseTextReader,
             string[] queryArgs = null)
         {
             HttpWebRequest request = CreateHttpsWebRequest(host, method, path, accessToken, clientApplicationName, queryArgs);
 
+            if (writeRequestBody != null)
+            {
+                using (Stream requestStream = request.GetRequestStream())
+                using (var streamWriter = new StreamWriter(requestStream))
+                {
+                    request.ContentType = writeRequestBody(streamWriter);
+                }
+            }
+
             using (HttpWebResponse response = (HttpWebResponse)await request.GetResponseAsync())
             using (StreamReader streamReader = new StreamReader(response.GetResponseStream()))
             {
-                return consumeTextReader(streamReader);
+                return consumeResponseTextReader(streamReader);
             }
         }
 

@@ -33,7 +33,7 @@ namespace Engine
         [JsonConverter(typeof(StringEnumConverter))]
         public enum VariableKind
         {
-            [EnumMember(Value = "number")] 
+            [EnumMember(Value = "numeric")] 
             Numeric,
 
             [EnumMember(Value = "aggregate")] 

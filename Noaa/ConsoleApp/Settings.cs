@@ -13,7 +13,8 @@ namespace ConsoleApp
         public string TsidCheckpointingTableName { get; set; }
         public string StationObservationsCheckpointingPartitionKey { get; set; }
         public string EventHubConnectionString { get; set; }
-        public string AzureMapsSubscriptionKey { get; set;}
+        public string AzureMapsSubscriptionKey { get; set; }
+        public string TsiEnvironmentFqdn { get; set; }
 
         public static Settings Loaded
         {

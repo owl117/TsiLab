@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
@@ -10,9 +11,14 @@ namespace Engine
 {
     public sealed class StastionsProcessor
     {
-        public StastionsProcessor()
+        private readonly TsiDataClient _tsiDataClient;
+        private readonly string _tsiEnvironmentFqdn;
+
+        public StastionsProcessor(TsiDataClient tsiDataClient, string tsiEnvironmentFqdn)
         {
             Stations = new List<Station>();
+            _tsiDataClient = tsiDataClient;
+            _tsiEnvironmentFqdn = tsiEnvironmentFqdn;
         }
 
         public List<Station> Stations { get; private set; }
@@ -46,6 +52,11 @@ namespace Engine
             {
                 Stations = stations;
             }
+        }
+
+        public async Task UpdateTsmAsync()
+        {
+            Console.WriteLine(await _tsiDataClient.PutTimeSeriesTypesAsync(_tsiEnvironmentFqdn, new [] { StationObservation.TimeSeriesType }));
         }
 
         private static List<Station> ParseStations(TextReader textReader)
