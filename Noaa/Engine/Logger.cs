@@ -13,10 +13,8 @@ namespace Engine
             TelemetryClient = new TelemetryClient() { InstrumentationKey = applicationInsightsInstrumentationKey };
         }
 
-        public static void TraceLine(string format, params object[] args)
+        public static void TraceLine(string message)
         {
-            string message = String.Format(format, args);
-
             if (TelemetryClient != null)
             {
                 TelemetryClient.TrackTrace(message);

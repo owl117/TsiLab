@@ -10,7 +10,10 @@ namespace ConsoleApp
             try
             {
                 var stationsProcessor = new StastionsProcessor(
-                    TsiDataClient.AadLoginAsApplicationAsync(Settings.Loaded.ApplicationClientInfo).Result, Settings.Loaded.TsiEnvironmentFqdn);
+                    TsiDataClient.AadLoginAsApplicationAsync(Settings.Loaded.ApplicationClientInfo).Result,
+                    Settings.Loaded.TsiEnvironmentFqdn,
+                    new AzureMapsClient(Settings.Loaded.AzureMapsSubscriptionKey));
+                stationsProcessor.ReloadStationsAsync().Wait();
                 stationsProcessor.UpdateTsmAsync().Wait();
             }
             catch (Exception e)
@@ -34,6 +37,7 @@ namespace ConsoleApp
                     Settings.Loaded.TsidCheckpointingTableName,
                     Settings.Loaded.StationObservationsCheckpointingPartitionKey,
                     Settings.Loaded.EventHubConnectionString,
+                    Settings.Loaded.AzureMapsSubscriptionKey,
                     Settings.Loaded.TsiEnvironmentFqdn);
                 
                 mainProcessor.Run().Wait();

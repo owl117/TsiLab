@@ -8,12 +8,14 @@ namespace Engine
         public TimeSeriesInstance(
             object[] timeSeriesId,
             string typeId,
+            string name,
             string description,
             Dictionary<string, string> instanceFields,
             string[] hierarchyIds)
         {
             TimeSeriesId = timeSeriesId;
             TypeId = typeId;
+            Name = name;
             Description = description;
             InstanceFields = instanceFields;
             HierarchyIds = hierarchyIds;
@@ -24,6 +26,9 @@ namespace Engine
 
         [JsonProperty(PropertyName = "typeId")]
         public string TypeId { get; private set; }
+
+        [JsonProperty(PropertyName = "name")]
+        public string Name { get; private set; }
 
         [JsonProperty(PropertyName = "description")]
         public string Description { get; private set; }

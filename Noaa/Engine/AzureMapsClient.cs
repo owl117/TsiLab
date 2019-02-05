@@ -19,7 +19,7 @@ namespace Engine
         {
             return await HttpUtils.MakeHttpCallAsync(
                 $"https://atlas.microsoft.com/search/address/reverse/json?subscription-key={_subscriptionKey}&api-version=1.0" +
-                $"&query={latitude:N3},{longitude:N3}",
+                $"&query={latitude:N6},{longitude:N6}",
                 ParseGetSearchAddressReverseResponse);
         }
         private static Address ParseGetSearchAddressReverseResponse(TextReader textReader)
@@ -55,6 +55,7 @@ namespace Engine
                 string countryTertiarySubdivision,
                 string municipality,
                 string postalCode,
+                string extendedPostalCode,
                 string municipalitySubdivision,
                 string country,
                 string countryCodeISO3,
@@ -72,6 +73,7 @@ namespace Engine
                 CountryTertiarySubdivision = countryTertiarySubdivision;
                 Municipality = municipality;
                 PostalCode = postalCode;
+                ExtendedPostalCode = extendedPostalCode;
                 MunicipalitySubdivision = municipalitySubdivision;
                 Country = country;
                 CountryCodeISO3 = countryCodeISO3;
@@ -111,6 +113,9 @@ namespace Engine
 
             [JsonProperty(PropertyName = "postalCode")]
             public string PostalCode { get; private set; }
+
+            [JsonProperty(PropertyName = "extendedPostalCode")]
+            public string ExtendedPostalCode { get; private set; }
 
             [JsonProperty(PropertyName = "municipalitySubdivision")]
             public string MunicipalitySubdivision { get; private set; }

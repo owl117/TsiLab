@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.IdentityModel.Clients.ActiveDirectory;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
+using Newtonsoft.Json.Linq;
 
 namespace Engine
 {
@@ -43,7 +45,7 @@ namespace Engine
                 consumeResponseTextReader: ParseGetTimeSeriesTypesResponse);
         }
 
-        public async Task<string> PutTimeSeriesTypesAsync(string environmentFqdn, TimeSeriesType[] types)
+        public async Task<BatchResult[]> PutTimeSeriesTypesAsync(string environmentFqdn, TimeSeriesType[] types)
         {
             return await MakeTsiDataApiCall(
                 environmentFqdn,
@@ -63,6 +65,16 @@ namespace Engine
                 consumeResponseTextReader: ParseGetTimeSeriesInstancesResponse);
         }
 
+        public async Task<TimeSeriesInstanceBatchResult[]> PutTimeSeriesInstancesAsync(string environmentFqdn, TimeSeriesInstance[] instances)
+        {
+            return await MakeTsiDataApiCall(
+                environmentFqdn,
+                "POST",
+                "timeseries/instances/$batch",
+                textWriter => WritePutTimeSeriesInstancesRequest(textWriter, instances),
+                ParsePutTimeSeriesInstancesResponse);
+        }
+
         private static EnvironmentInfo[] ParseGetEnvironmentsResponse(TextReader textReader)
         {
             GetEnvironmentsResponse getEnvironmentsResponse = JsonUtils.ParseJson<GetEnvironmentsResponse>(textReader);
@@ -80,15 +92,37 @@ namespace Engine
             JsonUtils.WriteJson(textWriter, new PutTimeSeriesTypesRequest(types));
         }
 
-        private static string ParsePutTimeSeriesTypesResponse(TextReader textReader)
+        private static BatchResult[] ParsePutTimeSeriesTypesResponse(TextReader textReader)
         {
-            return textReader.ReadToEnd();
+            PutTimeSeriesTypesResponse putTimeSeriesTypesResponse = JsonUtils.ParseJson<PutTimeSeriesTypesResponse>(textReader);
+            return (putTimeSeriesTypesResponse
+                   ?.put
+                   ?.Select(timeSeriesTypeInfo => new BatchResult(timeSeriesTypeInfo?.timeSeriesType?.id,
+                                                                  timeSeriesTypeInfo?.error?.ToString()))
+                   .ToArray())
+                   ?? new BatchResult[0];
         }
 
         private static TimeSeriesInstance[] ParseGetTimeSeriesInstancesResponse(TextReader textReader)
         {
             GetTimeSeriesInstancesResponse getTimeSeriesInstancesResponse = JsonUtils.ParseJson<GetTimeSeriesInstancesResponse>(textReader);
             return (getTimeSeriesInstancesResponse?.instances) ?? new TimeSeriesInstance[0];
+        }
+
+        private static void WritePutTimeSeriesInstancesRequest(TextWriter textWriter, TimeSeriesInstance[] instances)
+        {
+            JsonUtils.WriteJson(textWriter, new PutTimeSeriesInstancesRequest(instances));
+        }
+
+        private static TimeSeriesInstanceBatchResult[] ParsePutTimeSeriesInstancesResponse(TextReader textReader)
+        {
+            PutTimeSeriesInstancesResponse putTimeSeriesInstancesResponse = JsonUtils.ParseJson<PutTimeSeriesInstancesResponse>(textReader);
+            return (putTimeSeriesInstancesResponse
+                   ?.put
+                   ?.Select(timeSeriesInstanceInfo => new TimeSeriesInstanceBatchResult(timeSeriesInstanceInfo?.instance?.timeSeriesId,
+                                                                                        timeSeriesInstanceInfo?.error?.ToString()))
+                   .ToArray())
+                   ?? new TimeSeriesInstanceBatchResult[0];
         }
 
         private async Task<TResult> MakeTsiDataApiCall<TResult>(
@@ -148,6 +182,30 @@ namespace Engine
             }
         }
 
+        public sealed class BatchResult
+        {
+            public BatchResult(string itemId, string error)
+            {
+                ItemId = itemId;
+                Error = error;
+            }
+
+            public string ItemId { get; private set; }
+            public string Error { get; private set; }
+        }
+
+        public sealed class TimeSeriesInstanceBatchResult
+        {
+            public TimeSeriesInstanceBatchResult(object[] timeSeriesId, string error)
+            {
+                TimeSeriesId = timeSeriesId;
+                Error = error;
+            }
+
+            public object[] TimeSeriesId { get; private set; }
+            public string Error { get; private set; }
+        }
+
         #pragma warning disable 649
         private sealed class GetEnvironmentsResponse
         {
@@ -169,6 +227,22 @@ namespace Engine
             public TimeSeriesType[] put;
         }
 
+        private sealed class PutTimeSeriesTypesResponse
+        {
+            public TimeSeriesTypeInfo[] put;
+
+            public sealed class TimeSeriesTypeInfo
+            {
+                public TimeSeriesTypeId timeSeriesType;
+                public JToken error;
+
+                public sealed class TimeSeriesTypeId
+                {
+                    public string id;
+                }
+            }
+        }
+
         private sealed class GetTimeSeriesInstancesResponse
         {
             public TimeSeriesInstance[] instances;
@@ -177,7 +251,28 @@ namespace Engine
 
         private sealed class PutTimeSeriesInstancesRequest
         {
+            public PutTimeSeriesInstancesRequest(TimeSeriesInstance[] put)
+            {
+                this.put = put;
+            }
+
             public TimeSeriesInstance[] put;
+        }
+
+        private sealed class PutTimeSeriesInstancesResponse
+        {
+            public TimeSeriesInstanceInfo[] put;
+
+            public sealed class TimeSeriesInstanceInfo
+            {
+                public TimeSeriesInstanceId instance;
+                public JToken error;
+
+                public sealed class TimeSeriesInstanceId
+                {
+                    public string[] timeSeriesId;
+                }
+            }
         }
         #pragma warning restore 649
     }

@@ -27,10 +27,13 @@ namespace Engine
             string tsidCheckpointingTableName,
             string stationObservationsCheckpointingPartitionKey,
             string eventHubConnectionString,
+            string azureMapsSubscriptionKey,
             string tsiEnvironmentFqdn)
         {
             _stationsProcessor = new StastionsProcessor(
-                TsiDataClient.AadLoginAsApplicationAsync(applicationClientInfo).Result, tsiEnvironmentFqdn);
+                TsiDataClient.AadLoginAsApplicationAsync(applicationClientInfo).Result,
+                tsiEnvironmentFqdn,
+                new AzureMapsClient(azureMapsSubscriptionKey));
             _stationObservationsCheckpointing = TsidCheckpointing.CreateAsync(
                 storageAccountInfo, tsidCheckpointingTableName, stationObservationsCheckpointingPartitionKey).Result;
             _stationObservationProcessors = new Dictionary<string, StationObservationsProcessor>();

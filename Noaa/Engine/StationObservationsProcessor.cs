@@ -53,7 +53,7 @@ namespace Engine
             List<StationObservation> observations = await Retry.RetryWebCallAsync(
                 () => HttpUtils.MakeHttpCallAsync(url, ParseObservartions, pretendBrowser: true),
                 $"ProcessObservations({StationShortId})",
-                // If task failed, skip it during this pass - it will be retried during the next pass.
+                // If failed, skip it during this pass - it will be retried during the next pass.
                 numberOfAttempts: 1, waitMilliseconds: 0, rethrow: false,
                 onWebException: (WebException e) => 
                 {
@@ -74,7 +74,7 @@ namespace Engine
             }
             else if (observations == null)
             {
-                // If task failed for any other reason, skip it during this pass - it will be retried during the next pass.
+                // If failed for any other reason, skip it during this pass - it will be retried during the next pass.
                 Logger.TraceLine($"ProcessObservations({StationShortId}): Pull failed and skipped during this pass");
                 return;
             }

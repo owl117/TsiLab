@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Net;
 using System.Threading.Tasks;
 
@@ -60,6 +61,19 @@ namespace Engine
                         --numberOfAttempts;
                     }
 
+                    string errorResponse;
+                    try
+                    {
+                        using (var streamReader = new StreamReader(webException.Response.GetResponseStream()))
+                        {
+                            errorResponse = await streamReader.ReadToEndAsync();
+                        }
+                    }
+                    catch
+                    {
+                        errorResponse = null;
+                    }
+
                     if (numberOfAttempts == 0)
                     {
                         if (rethrow)
@@ -68,13 +82,13 @@ namespace Engine
                         }
                         else
                         {
-                            Logger.TraceLine($"RetryWebCall({name}): Web call failed and will NOT be retried. Last exception: {e}");
+                            Logger.TraceLine($"RetryWebCall({name}): Web call failed and will NOT be retried. Last error response: {errorResponse}. Last exception: {e}");
                             return default(TResult);
                         }
                     }
                     else
                     {
-                        Logger.TraceLine($"RetryWebCall({name}): Web call failed and will be retried in {waitMilliseconds}ms. Exception: {e}");
+                        Logger.TraceLine($"RetryWebCall({name}): Web call failed and will be retried in {waitMilliseconds}ms. Error response: {errorResponse}. Exception: {e}");
                         await Task.Delay(waitMilliseconds);
                     }
                 }

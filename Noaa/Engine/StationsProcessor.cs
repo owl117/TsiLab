@@ -13,12 +13,14 @@ namespace Engine
     {
         private readonly TsiDataClient _tsiDataClient;
         private readonly string _tsiEnvironmentFqdn;
+        private readonly AzureMapsClient _azureMapsClient;
 
-        public StastionsProcessor(TsiDataClient tsiDataClient, string tsiEnvironmentFqdn)
+        public StastionsProcessor(TsiDataClient tsiDataClient, string tsiEnvironmentFqdn, AzureMapsClient azureMapsClient)
         {
             Stations = new List<Station>();
             _tsiDataClient = tsiDataClient;
             _tsiEnvironmentFqdn = tsiEnvironmentFqdn;
+            _azureMapsClient = azureMapsClient;
         }
 
         public List<Station> Stations { get; private set; }
@@ -54,11 +56,6 @@ namespace Engine
             }
         }
 
-        public async Task UpdateTsmAsync()
-        {
-            Console.WriteLine(await _tsiDataClient.PutTimeSeriesTypesAsync(_tsiEnvironmentFqdn, new [] { StationObservation.TimeSeriesType }));
-        }
-
         private static List<Station> ParseStations(TextReader textReader)
         {
             JObject jObject = JsonUtils.ParseJson(textReader);
@@ -71,15 +68,135 @@ namespace Engine
                 JObject properties = JsonUtils.GetPropertyValueOrNull<JObject>(feature, "properties");
                 Debug.Assert(properties != null && properties["@type"].ToString() == "wx:ObservationStation", 
                              "properties != null && properties[\"@type\"].ToString() == \"wx:ObservationStation\"");
+
+                JObject geometry = JsonUtils.GetPropertyValueOrNull<JObject>(feature, "geometry");
+                Debug.Assert(geometry != null && geometry["type"].ToString() == "Point", 
+                             "geometry != null && geometry[\"type\"].ToString() == \"Point\"");
                 
+                JArray coordinates = JsonUtils.GetPropertyValueOrNull<JArray>(geometry, "coordinates");
                 stations.Add(new Station(
                     id: properties["@id"].ToString(),
                     shortId: properties["stationIdentifier"].ToString(),
                     name: properties["name"].ToString(),
-                    timeZone: properties["timeZone"].ToString()));
+                    timeZone: properties["timeZone"].ToString(),
+                    latitude: coordinates[1].Value<double>(),
+                    longitude: coordinates[0].Value<double>()));
             }
 
             return stations;
+        }
+
+        public async Task UpdateTsmAsync()
+        {
+            if (Stations.Count == 0)
+            {
+                Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn}): Stations not loaded, model update skipped during this pass");
+                return;
+            }
+
+            TsiDataClient.BatchResult[] putTypesResult = await Retry.RetryWebCallAsync(
+                () => _tsiDataClient.PutTimeSeriesTypesAsync(_tsiEnvironmentFqdn, new [] { StationObservation.TimeSeriesType }),
+                "UpdateTsm({_tsiEnvironmentFqdn})/Type",
+                // If failed, skip it during this pass - it will be retried during the next pass.
+                numberOfAttempts: 1, waitMilliseconds: 0, rethrow: false);
+
+            // If failed, skip it during this pass - it will be retried during the next pass.
+            if (putTypesResult == null)
+            {
+                Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn})/Type: Type update failed, model update skipped during this pass");
+                return;
+            }
+            else if (putTypesResult.Any(e => !String.IsNullOrWhiteSpace(e.Error)))
+            {
+                Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn})/Type: Type update failed, model update skipped during this pass. Errors: " +
+                                 String.Join(", ", putTypesResult.Where(e => !String.IsNullOrWhiteSpace(e.Error))
+                                                                 .Select(e => $"typeId({e.ItemId}) -> {e.Error}")));
+                return;
+            }
+
+            const int batchSize = 50;
+            var stationBatches = new List<List<Station>>();
+            for (int i = 0; i < Stations.Count / batchSize + 1; ++i)
+            {
+                stationBatches.Add(Stations.Skip(i * batchSize).Take(batchSize).ToList());
+            }
+
+            for (int i = 0; i < stationBatches.Count / 4 + 1; ++i)
+            {
+                await Task.WhenAll(stationBatches.Skip(4).Take(4).Select(batch => UpdateTsmInstancesAsync(batch)));
+            }
+        }
+
+        private async Task UpdateTsmInstancesAsync(List<Station> stations)
+        {
+            // Convert station to time series instances.
+            // Some may be skipped due to errors, which is fine - they will be retried during the next pass.
+            var instances = new List<TimeSeriesInstance>();
+            foreach (Station station in stations)
+            {
+                TimeSeriesInstance instance = await ConvertToTimeSeriesInstanceAsync(station);
+                if (instance != null)
+                {
+                    instances.Add(instance);
+                    Console.WriteLine(station.ShortId);
+                }
+            }
+
+            TsiDataClient.TimeSeriesInstanceBatchResult[] putTimeSeriesInstances =  await Retry.RetryWebCallAsync(
+                () => _tsiDataClient.PutTimeSeriesInstancesAsync(_tsiEnvironmentFqdn, instances.ToArray()),
+                $"UpdateTsm({_tsiEnvironmentFqdn})/Instances",
+                // If failed, skip it during this pass - it will be retried during the next pass.
+                numberOfAttempts: 1, waitMilliseconds: 0, rethrow: false);
+
+            // If failed, skip it during this pass - it will be retried during the next pass.
+            if (putTimeSeriesInstances == null)
+            {
+                Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn})/Instances: Update for the following stations failed and will be skipped during this pass: " +
+                                 String.Join(", ", stations.Select(s => s.ShortId)));
+            }
+            else if (putTimeSeriesInstances.Any(e => !String.IsNullOrWhiteSpace(e.Error)))
+            {
+                Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn})/Instances: Instances update failed and will be skipped during this pass. Errors: " +
+                                 String.Join(", ", putTimeSeriesInstances.Where(e => !String.IsNullOrWhiteSpace(e.Error))
+                                                                         .Select(e => $"instanceId({String.Join(",", e.TimeSeriesId)}) -> {e.Error}")));
+            }
+            else
+            {
+                Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn})/Instances: Model for the following stations has been updated: " + 
+                                 String.Join(", ", stations.Select(s => s.ShortId)));
+            }
+        }
+
+        private async Task<TimeSeriesInstance> ConvertToTimeSeriesInstanceAsync(Station station)
+        {
+            var instanceFields = new Dictionary<string, string>()
+            {
+                { "FullName", station.Name },
+                { "TimeZone", station.TimeZone }
+            };
+
+            AzureMapsClient.Address address = station.Latitude != null && station.Longitude != null ? await Retry.RetryWebCallAsync(
+                () => _azureMapsClient.SearchAddressReverseAsync(station.Latitude.Value, station.Longitude.Value),
+                $"UpdateTsm({_tsiEnvironmentFqdn})/ResolveStationAddress({station.ShortId})",
+                // Try few times. If failed, skip it - this station will have no address.
+                numberOfAttempts: 3, waitMilliseconds: 500, rethrow: false) : null;
+
+            if (address != null)
+            {
+                instanceFields.Add("Country", address.Country);
+                instanceFields.Add("CountrySubdivisionName", address.CountrySubdivisionName);
+                instanceFields.Add("CountrySecondarySubdivision", address.CountrySecondarySubdivision);
+                instanceFields.Add("Municipality", address.Municipality);
+                instanceFields.Add("PostalCode", address.PostalCode);
+            }
+
+            return new TimeSeriesInstance(
+                timeSeriesId: new object[] { station.Id },
+                typeId: StationObservation.TimeSeriesType.Id,
+                name: station.ShortId,
+                description: "Weather observations for " + station.Name,
+                instanceFields: instanceFields,
+                hierarchyIds: null);
         }
     }
 }
