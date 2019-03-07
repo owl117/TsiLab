@@ -9,12 +9,12 @@ namespace Engine
 {
     public static class AzureUtils
     {
-        public static async Task<CloudTable> GetOrCreateTableAsync(AzureUtils.StorageAccountInfo storageAcountInfo, string name)
+        public static async Task<CloudTable> GetOrCreateTableAsync(AzureUtils.StorageAccountInfo storageAcountInfo, string tableName)
         {
             var storageCredentials = new StorageCredentials(storageAcountInfo.StorageAccountName, storageAcountInfo.StorageAccountKey);
 		    var cloudStorageAccount = new CloudStorageAccount(storageCredentials, useHttps: true);
             CloudTableClient cloudTableClient = cloudStorageAccount.CreateCloudTableClient();
-            CloudTable cloudTable = cloudTableClient.GetTableReference(name);
+            CloudTable cloudTable = cloudTableClient.GetTableReference(tableName);
             if (await cloudTable.CreateIfNotExistsAsync())
             {
                 Logger.TraceLine($"Cloud table '{cloudTable.Name}' created.");
@@ -26,6 +26,28 @@ namespace Engine
 
             return cloudTable;
         }
+
+        public static async Task<bool> DeleteTableRowIfExistsAsync(CloudTable table, string partitionKey, string rowKey)
+        {
+            TableOperation deleteOperation = TableOperation.Delete(new TableEntity(partitionKey, rowKey) { ETag = "*" });
+
+            try
+            {
+                await table.ExecuteAsync(deleteOperation);
+                return true;
+            }
+            catch (Exception e)
+            {
+                StorageException storageException = Retry.UnwrapAggregateException<StorageException>(e);
+                if (storageException == null || storageException.RequestInformation.HttpStatusCode != 404)
+                {
+                    throw;
+                }
+
+                return false;
+            }
+        }
+
 
         public static async Task<string> AadLoginAsApplicationAsync(string resource, AzureUtils.ApplicationClientInfo applicationClientInfo)
         {

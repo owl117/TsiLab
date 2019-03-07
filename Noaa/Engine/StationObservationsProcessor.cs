@@ -42,7 +42,7 @@ namespace Engine
 
             DateTimeOffset pullFromTimestamp =
                 _lastCommittedTimestamp 
-                ?? await _checkpointing.GetLastCommittedTimestampAsync(StationShortId) 
+                ?? await _checkpointing.TryGetLastCommittedTimestampAsync(StationShortId) 
                 ?? DateTimeOffset.UtcNow;
 
             string url = 

@@ -9,20 +9,13 @@ namespace Engine
         private readonly CloudTable _cloudTable;
         private readonly string _partitionKey;
 
-        private TsidCheckpointing(CloudTable cloudTable, string partitionKey)
+        public TsidCheckpointing(CloudTable cloudTable, string partitionKey)
         {
             _cloudTable = cloudTable;
             _partitionKey = partitionKey;
         }
 
-        public static async Task<TsidCheckpointing> CreateAsync(AzureUtils.StorageAccountInfo storageAcountInfo, string tableName, string partitionKey)
-        {
-            return new TsidCheckpointing(
-                await AzureUtils.GetOrCreateTableAsync(storageAcountInfo, tableName),
-                partitionKey);
-        }
-
-        public async Task<DateTimeOffset?> GetLastCommittedTimestampAsync(string tsid)
+        public async Task<DateTimeOffset?> TryGetLastCommittedTimestampAsync(string tsid)
         {
             TableOperation retrieveOperation = TableOperation.Retrieve<LastCommittedTimestampByTsid>(_partitionKey, tsid);
 
@@ -46,7 +39,7 @@ namespace Engine
             await _cloudTable.ExecuteAsync(replaceOperation);
         }
 
-        public sealed class LastCommittedTimestampByTsid : TableEntity
+        private sealed class LastCommittedTimestampByTsid : TableEntity
         {
             public LastCommittedTimestampByTsid(string partitionKey, string tsid, DateTimeOffset lastCommittedTimestamp) 
                 : base(partitionKey: partitionKey, rowKey: tsid)

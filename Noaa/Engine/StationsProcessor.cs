@@ -11,6 +11,9 @@ namespace Engine
 {
     public sealed class StastionsProcessor
     {
+        private const int StationsUpdateBatchSize = 100;
+        private const int StationsUpdateParalellism = 8;
+
         private readonly TsiDataClient _tsiDataClient;
         private readonly string _tsiEnvironmentFqdn;
         private readonly AzureMapsClient _azureMapsClient;
@@ -114,16 +117,19 @@ namespace Engine
                 return;
             }
 
-            const int batchSize = 50;
             var stationBatches = new List<List<Station>>();
-            for (int i = 0; i < Stations.Count / batchSize + 1; ++i)
+            for (int i = 0; i < Stations.Count / StationsUpdateBatchSize + 1; ++i)
             {
-                stationBatches.Add(Stations.Skip(i * batchSize).Take(batchSize).ToList());
+                stationBatches.Add(Stations.Skip(i * StationsUpdateBatchSize).Take(StationsUpdateBatchSize).ToList());
             }
 
-            for (int i = 0; i < stationBatches.Count / 4 + 1; ++i)
+            for (int i = 0; i < stationBatches.Count / StationsUpdateParalellism + 1; ++i)
             {
-                await Task.WhenAll(stationBatches.Skip(4).Take(4).Select(batch => UpdateTsmInstancesAsync(batch)));
+                await Task.WhenAll(
+                    stationBatches
+                    .Skip(i * StationsUpdateParalellism)
+                    .Take(StationsUpdateParalellism)
+                    .Select(batch => UpdateTsmInstancesAsync(batch)));
             }
         }
 
@@ -138,7 +144,6 @@ namespace Engine
                 if (instance != null)
                 {
                     instances.Add(instance);
-                    Console.WriteLine(station.ShortId);
                 }
             }
 

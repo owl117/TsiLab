@@ -1,6 +1,7 @@
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.WindowsAzure.Storage.Table;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -8,24 +9,91 @@ namespace Engine
 {
     public sealed class AzureMapsClient
     {
+        private const string SearchAddressReversePartitionKey = "SearchAddressReverse";
         private readonly string _subscriptionKey;
+        private readonly CloudTable _cacheCloudTable;
 
-        public AzureMapsClient(string subscriptionKey)
+        public AzureMapsClient(string subscriptionKey, CloudTable cacheCloudTable)
         {
             _subscriptionKey = subscriptionKey;
+            _cacheCloudTable = cacheCloudTable;
         }
 
         public async Task<Address> SearchAddressReverseAsync(double latitude, double longitude)
         {
-            return await HttpUtils.MakeHttpCallAsync(
-                $"https://atlas.microsoft.com/search/address/reverse/json?subscription-key={_subscriptionKey}&api-version=1.0" +
-                $"&query={latitude:N6},{longitude:N6}",
+            string key = $"{latitude:N6},{longitude:N6}";
+
+            Address address = await TryGetSearchAddressReverseFromCacheAsync(key);
+            if (address == null)
+            {
+                address = await HttpUtils.MakeHttpCallAsync(
+                $"https://atlas.microsoft.com/search/address/reverse/json?subscription-key={_subscriptionKey}&api-version=1.0&query=" + key,
                 ParseGetSearchAddressReverseResponse);
+
+                await CacheSearchAddressReverseAsync(key, address);
+            }
+
+            return address;
         }
-        private static Address ParseGetSearchAddressReverseResponse(TextReader textReader)
+        private Address ParseGetSearchAddressReverseResponse(TextReader textReader)
         {
             GetSearchAddressReverseResponse getSearchAddressReverseResponse = JsonUtils.ParseJson<GetSearchAddressReverseResponse>(textReader);
             return getSearchAddressReverseResponse?.addresses?.FirstOrDefault()?.address;
+        }
+
+        private async Task<Address> TryGetSearchAddressReverseFromCacheAsync(string key)
+        {
+            TableOperation retrieveOperation = TableOperation.Retrieve<CacheEntry>(SearchAddressReversePartitionKey, key);
+
+            TableResult retrievedResult = await _cacheCloudTable.ExecuteAsync(retrieveOperation);
+
+            if (retrievedResult.Result != null)
+            {
+                using (var stringReader = new StringReader(((CacheEntry)retrievedResult.Result).Value))
+                {
+                    return JsonUtils.ParseJson<Address>(stringReader);
+                }
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        private async Task CacheSearchAddressReverseAsync(string key, Address address)
+        {
+            if (address != null)
+            {
+                using (var stringWriter = new StringWriter())
+                {
+                    JsonUtils.WriteJson(stringWriter, address);
+                    stringWriter.Flush();
+
+                    TableOperation replaceOperation = TableOperation.InsertOrMerge(
+                        new CacheEntry(SearchAddressReversePartitionKey, key, stringWriter.GetStringBuilder().ToString()));
+
+                    await _cacheCloudTable.ExecuteAsync(replaceOperation);
+                }
+            }
+            else
+            {
+                await AzureUtils.DeleteTableRowIfExistsAsync(_cacheCloudTable, SearchAddressReversePartitionKey, key);
+            }
+        }
+
+        private sealed class CacheEntry : TableEntity
+        {
+            public CacheEntry(string partitionKey, string rowKey, string value) 
+                : base(partitionKey: partitionKey, rowKey: rowKey)
+            {
+                Value = value;
+            }
+
+            public CacheEntry()
+            {
+            }
+
+            public string Value { get; set; }
         }
 
         #pragma warning disable 649

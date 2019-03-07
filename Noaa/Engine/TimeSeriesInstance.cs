@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using Newtonsoft.Json;
 
 namespace Engine
@@ -17,7 +19,15 @@ namespace Engine
             TypeId = typeId;
             Name = name;
             Description = description;
+
+            // Instance fields with null value are not supported.
+            if (instanceFields != null)
+            {
+                instanceFields = instanceFields.Where(kvp => !String.IsNullOrEmpty(kvp.Value)).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                instanceFields = instanceFields.Count > 0 ? instanceFields : null;
+            }
             InstanceFields = instanceFields;
+            
             HierarchyIds = hierarchyIds;
         }
 
