@@ -7,31 +7,11 @@ namespace ConsoleApp
     {
         static void Main(string[] args)
         {
-            try
-            {
-                var stationsProcessor = new StastionsProcessor(
-                    TsiDataClient.AadLoginAsApplicationAsync(Settings.Loaded.ApplicationClientInfo).Result,
-                    Settings.Loaded.TsiEnvironmentFqdn,
-                    new AzureMapsClient(
-                        Settings.Loaded.AzureMapsSubscriptionKey,
-                        AzureUtils.GetOrCreateTableAsync(Settings.Loaded.StorageAccountInfo, Settings.Loaded.AzureMapsCacheTableName).Result));
-                stationsProcessor.ReloadStationsAsync().Wait();
-                stationsProcessor.UpdateTsmAsync().Wait();
-            }
-            catch (Exception e)
-            {
-                var we = Retry.UnwrapAggregateException<System.Net.WebException>(e);
-                using (var sr = new System.IO.StreamReader(we.Response.GetResponseStream()))
-                {
-                    Console.WriteLine(sr.ReadToEnd());
-                }
-            }
-            return;
             Logger.InitializeTelemetryClient(Settings.Loaded.ApplicationInsightsInstrumentationKey);
             
             try
             {
-                HttpUtils.DefaultConnectionLimit = 18;
+                HttpUtils.DefaultConnectionLimit = 8;
 
                 var mainProcessor = new MainProcessor(
                     Settings.Loaded.ApplicationClientInfo,
@@ -44,6 +24,7 @@ namespace ConsoleApp
                     Settings.Loaded.TsiEnvironmentFqdn);
                 
                 mainProcessor.Run().Wait();
+                //mainProcessor.ReloadStationsAndUpdateTsmAsync().Wait(); // test TSM generation without pulling data
             }
             catch (Exception e)
             {

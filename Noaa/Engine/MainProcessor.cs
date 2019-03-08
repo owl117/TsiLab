@@ -16,6 +16,7 @@ namespace Engine
         /// In reality throttling goes away sooner than a day, just needs a long wait. 
         /// </summary>
         private static TimeSpan DelayOn403 = TimeSpan.FromMinutes(30);
+        private static TimeSpan UpdateStationsInterval = TimeSpan.FromDays(7);
         private readonly StastionsProcessor _stationsProcessor;
         private readonly TsidCheckpointing _stationObservationsCheckpointing;
         private Dictionary<string, StationObservationsProcessor> _stationObservationProcessors;
@@ -49,7 +50,7 @@ namespace Engine
 
         public async Task Run()
         {
-            await ReloadStationsAsync();
+            DateTime? updateStationsTimestamp = null;
 
             var tasks = new List<Task>(HttpUtils.DefaultConnectionLimit);
             int passCount = 1;
@@ -58,6 +59,12 @@ namespace Engine
                 // Make a pass thru all stations.
                 Logger.TraceLine($"PASS {passCount} START");
                 Stopwatch stopwatch = Stopwatch.StartNew();
+
+                if (updateStationsTimestamp == null || DateTime.Now - updateStationsTimestamp > UpdateStationsInterval)
+                {
+                    await ReloadStationsAndUpdateTsmAsync();
+                    updateStationsTimestamp = DateTime.Now;
+                }
 
                 List<StationObservationsProcessor> stationObservationsProcessors = _stationObservationProcessors.Values.ToList();
                 bool detected403 = false;
@@ -100,7 +107,7 @@ namespace Engine
                 }
                 else
                 {
-                    Logger.TraceLine($"PASS {passCount} DONE: Elapsed {stopwatch.Elapsed})");
+                    Logger.TraceLine($"PASS {passCount} DONE: Elapsed {stopwatch.Elapsed}");
                     delay = (_stationObservationProcessors.Values.Min(sop => sop.GoodNextTimeToProcess) - DateTime.Now) + TimeSpan.FromMinutes(1);
                     delay = NormalPassDelay > delay ? NormalPassDelay : delay;
                 }
@@ -111,7 +118,7 @@ namespace Engine
             }
         }
 
-        private async Task ReloadStationsAsync()
+        public async Task ReloadStationsAndUpdateTsmAsync()
         {
             Logger.TraceLine("Loading stations.");
             while (true)
@@ -153,6 +160,10 @@ namespace Engine
             }
 
             _stationObservationProcessors = stationObservationProcessors;
+
+            Logger.TraceLine("Updating TSM.");
+            await _stationsProcessor.UpdateTsmAsync();
+            Logger.TraceLine($"Updated TSM for {_stationsProcessor.Stations.Count} stations.");
         }
     }
 }

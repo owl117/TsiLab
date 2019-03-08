@@ -55,6 +55,26 @@ namespace Engine
                 ParsePutTimeSeriesTypesResponse);
         }
 
+        public async Task<TimeSeriesHierarchy[]> GetTimeSeriesHierarchiesAsync(string environmentFqdn)
+        {
+            return await MakeTsiDataApiCall(
+                environmentFqdn,
+                "GET",
+                "timeseries/hierarchies",
+                writeRequestBody: null,
+                consumeResponseTextReader: ParseGetTimeSeriesHierarchiesResponse);
+        }
+
+        public async Task<BatchResult[]> PutTimeSeriesHierarchiesAsync(string environmentFqdn, TimeSeriesHierarchy[] hierarchies)
+        {
+            return await MakeTsiDataApiCall(
+                environmentFqdn,
+                "POST",
+                "timeseries/hierarchies/$batch",
+                textWriter => WritePutTimeSeriesHierarchiesRequest(textWriter, hierarchies),
+                ParsePutTimeSeriesHierarchiesResponse);
+        }
+
         public async Task<TimeSeriesInstance[]> GetTimeSeriesInstancesAsync(string environmentFqdn)
         {
             return await MakeTsiDataApiCall(
@@ -65,7 +85,7 @@ namespace Engine
                 consumeResponseTextReader: ParseGetTimeSeriesInstancesResponse);
         }
 
-        public async Task<TimeSeriesInstanceBatchResult[]> PutTimeSeriesInstancesAsync(string environmentFqdn, TimeSeriesInstance[] instances)
+        public async Task<BatchResult[]> PutTimeSeriesInstancesAsync(string environmentFqdn, TimeSeriesInstance[] instances)
         {
             return await MakeTsiDataApiCall(
                 environmentFqdn,
@@ -103,6 +123,28 @@ namespace Engine
                    ?? new BatchResult[0];
         }
 
+        private static TimeSeriesHierarchy[] ParseGetTimeSeriesHierarchiesResponse(TextReader textReader)
+        {
+            GetTimeSeriesHierarchiesResponse getTimeSeriesHierarchiesResponse = JsonUtils.ParseJson<GetTimeSeriesHierarchiesResponse>(textReader);
+            return (getTimeSeriesHierarchiesResponse?.hierarchies) ?? new TimeSeriesHierarchy[0];
+        }
+
+        private static void WritePutTimeSeriesHierarchiesRequest(TextWriter textWriter, TimeSeriesHierarchy[] hierarchies)
+        {
+            JsonUtils.WriteJson(textWriter, new PutTimeSeriesHierarchiesRequest(hierarchies));
+        }
+
+        private static BatchResult[] ParsePutTimeSeriesHierarchiesResponse(TextReader textReader)
+        {
+            PutTimeSeriesHierarchiesResponse putTimeSeriesHierarchiesResponse = JsonUtils.ParseJson<PutTimeSeriesHierarchiesResponse>(textReader);
+            return (putTimeSeriesHierarchiesResponse
+                   ?.put
+                   ?.Select(timeSeriesHierarchyInfo => new BatchResult(timeSeriesHierarchyInfo?.timeSeriesHierarchy?.id,
+                                                                       timeSeriesHierarchyInfo?.error?.ToString()))
+                   .ToArray())
+                   ?? new BatchResult[0];
+        }
+
         private static TimeSeriesInstance[] ParseGetTimeSeriesInstancesResponse(TextReader textReader)
         {
             GetTimeSeriesInstancesResponse getTimeSeriesInstancesResponse = JsonUtils.ParseJson<GetTimeSeriesInstancesResponse>(textReader);
@@ -114,15 +156,15 @@ namespace Engine
             JsonUtils.WriteJson(textWriter, new PutTimeSeriesInstancesRequest(instances));
         }
 
-        private static TimeSeriesInstanceBatchResult[] ParsePutTimeSeriesInstancesResponse(TextReader textReader)
+        private static BatchResult[] ParsePutTimeSeriesInstancesResponse(TextReader textReader)
         {
             PutTimeSeriesInstancesResponse putTimeSeriesInstancesResponse = JsonUtils.ParseJson<PutTimeSeriesInstancesResponse>(textReader);
             return (putTimeSeriesInstancesResponse
                    ?.put
-                   ?.Select(timeSeriesInstanceInfo => new TimeSeriesInstanceBatchResult(timeSeriesInstanceInfo?.instance?.timeSeriesId,
-                                                                                        timeSeriesInstanceInfo?.error?.ToString()))
+                   ?.Select(timeSeriesInstanceInfo => new BatchResult(timeSeriesInstanceInfo?.instance?.timeSeriesId,
+                                                                      timeSeriesInstanceInfo?.error?.ToString()))
                    .ToArray())
-                   ?? new TimeSeriesInstanceBatchResult[0];
+                   ?? new BatchResult[0];
         }
 
         private async Task<TResult> MakeTsiDataApiCall<TResult>(
@@ -194,18 +236,6 @@ namespace Engine
             public string Error { get; private set; }
         }
 
-        public sealed class TimeSeriesInstanceBatchResult
-        {
-            public TimeSeriesInstanceBatchResult(object[] timeSeriesId, string error)
-            {
-                TimeSeriesId = timeSeriesId;
-                Error = error;
-            }
-
-            public object[] TimeSeriesId { get; private set; }
-            public string Error { get; private set; }
-        }
-
         #pragma warning disable 649
         private sealed class GetEnvironmentsResponse
         {
@@ -243,6 +273,37 @@ namespace Engine
             }
         }
 
+        private sealed class GetTimeSeriesHierarchiesResponse
+        {
+            public TimeSeriesHierarchy[] hierarchies;
+        }
+
+        private sealed class PutTimeSeriesHierarchiesRequest
+        {
+            public PutTimeSeriesHierarchiesRequest(TimeSeriesHierarchy[] put)
+            {
+                this.put = put;
+            }
+
+            public TimeSeriesHierarchy[] put;
+        }
+
+        private sealed class PutTimeSeriesHierarchiesResponse
+        {
+            public TimeSeriesHierarchyInfo[] put;
+
+            public sealed class TimeSeriesHierarchyInfo
+            {
+                public TimeSeriesHierarchyId timeSeriesHierarchy;
+                public JToken error;
+
+                public sealed class TimeSeriesHierarchyId
+                {
+                    public string id;
+                }
+            }
+        }
+
         private sealed class GetTimeSeriesInstancesResponse
         {
             public TimeSeriesInstance[] instances;
@@ -270,7 +331,7 @@ namespace Engine
 
                 public sealed class TimeSeriesInstanceId
                 {
-                    public string[] timeSeriesId;
+                    public string timeSeriesId;
                 }
             }
         }

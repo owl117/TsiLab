@@ -113,7 +113,7 @@ namespace Engine
                     value: new TimeSeriesExpression("$event.CloudLayer0_base_value.Double"),
                     filter: null,
                     aggregation: new TimeSeriesExpression("avg($value)")
-                )},
+                )}
             }
         );
 

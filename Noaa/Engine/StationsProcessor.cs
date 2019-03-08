@@ -106,14 +106,34 @@ namespace Engine
             // If failed, skip it during this pass - it will be retried during the next pass.
             if (putTypesResult == null)
             {
-                Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn})/Type: Type update failed, model update skipped during this pass");
+                Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn})/Type: Update failed, model update skipped during this pass");
                 return;
             }
             else if (putTypesResult.Any(e => !String.IsNullOrWhiteSpace(e.Error)))
             {
-                Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn})/Type: Type update failed, model update skipped during this pass. Errors: " +
+                Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn})/Type: Update failed, model update skipped during this pass. Errors: " +
                                  String.Join(", ", putTypesResult.Where(e => !String.IsNullOrWhiteSpace(e.Error))
                                                                  .Select(e => $"typeId({e.ItemId}) -> {e.Error}")));
+                return;
+            }
+
+            TsiDataClient.BatchResult[] putHierarchiesResult = await Retry.RetryWebCallAsync(
+                () => _tsiDataClient.PutTimeSeriesHierarchiesAsync(_tsiEnvironmentFqdn, new [] { Station.TimeSeriesHierarchy }),
+                "UpdateTsm({_tsiEnvironmentFqdn})/Hierarchy",
+                // If failed, skip it during this pass - it will be retried during the next pass.
+                numberOfAttempts: 1, waitMilliseconds: 0, rethrow: false);
+
+            // If failed, skip it during this pass - it will be retried during the next pass.
+            if (putHierarchiesResult == null)
+            {
+                Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn})/Hierarchy: Update failed, model update skipped during this pass");
+                return;
+            }
+            else if (putHierarchiesResult.Any(e => !String.IsNullOrWhiteSpace(e.Error)))
+            {
+                Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn})/Hierarchy: Update failed, model update skipped during this pass. Errors: " +
+                                 String.Join(", ", putHierarchiesResult.Where(e => !String.IsNullOrWhiteSpace(e.Error))
+                                                                       .Select(e => $"hierarchyId({e.ItemId}) -> {e.Error}")));
                 return;
             }
 
@@ -147,7 +167,7 @@ namespace Engine
                 }
             }
 
-            TsiDataClient.TimeSeriesInstanceBatchResult[] putTimeSeriesInstances =  await Retry.RetryWebCallAsync(
+            TsiDataClient.BatchResult[] putTimeSeriesInstances =  await Retry.RetryWebCallAsync(
                 () => _tsiDataClient.PutTimeSeriesInstancesAsync(_tsiEnvironmentFqdn, instances.ToArray()),
                 $"UpdateTsm({_tsiEnvironmentFqdn})/Instances",
                 // If failed, skip it during this pass - it will be retried during the next pass.
@@ -161,9 +181,9 @@ namespace Engine
             }
             else if (putTimeSeriesInstances.Any(e => !String.IsNullOrWhiteSpace(e.Error)))
             {
-                Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn})/Instances: Instances update failed and will be skipped during this pass. Errors: " +
+                Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn})/Instances: Update failed and will be skipped during this pass. Errors: " +
                                  String.Join(", ", putTimeSeriesInstances.Where(e => !String.IsNullOrWhiteSpace(e.Error))
-                                                                         .Select(e => $"instanceId({String.Join(",", e.TimeSeriesId)}) -> {e.Error}")));
+                                                                         .Select(e => $"instanceId({e.ItemId}) -> {e.Error}")));
             }
             else
             {
@@ -188,20 +208,20 @@ namespace Engine
 
             if (address != null)
             {
-                instanceFields.Add("Country", address.Country);
-                instanceFields.Add("CountrySubdivisionName", address.CountrySubdivisionName);
-                instanceFields.Add("CountrySecondarySubdivision", address.CountrySecondarySubdivision);
-                instanceFields.Add("Municipality", address.Municipality);
-                instanceFields.Add("PostalCode", address.PostalCode);
+                instanceFields.Add(Station.InstanceFieldName_Country, address.Country);
+                instanceFields.Add(Station.InstanceFieldName_CountrySubdivisionName, address.CountrySubdivisionName);
+                instanceFields.Add(Station.InstanceFieldName_CountrySecondarySubdivision, address.CountrySecondarySubdivision);
+                instanceFields.Add(Station.InstanceFieldName_Municipality, address.Municipality);
+                instanceFields.Add(Station.InstanceFieldName_PostalCode, address.PostalCode);
             }
 
             return new TimeSeriesInstance(
                 timeSeriesId: new object[] { station.Id },
                 typeId: StationObservation.TimeSeriesType.Id,
-                name: station.ShortId,
+                name: $"Observations {station.ShortId} ({station.Name})",
                 description: "Weather observations for " + station.Name,
                 instanceFields: instanceFields,
-                hierarchyIds: null);
+                hierarchyIds: new [] { Station.TimeSeriesHierarchy.Id });
         }
     }
 }
