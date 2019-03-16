@@ -12,17 +12,25 @@ namespace Engine
 {
     public sealed class TsiDataClient
     {
-        private readonly string _accessToken;
+        private static TimeSpan AccessTokenRefreshAge = TimeSpan.FromMinutes(59);
 
-        private TsiDataClient(string accessToken)
+        private readonly Func<Task<string>> _refreshAccessTokenAsync;
+        /// <summary>
+        /// Do not access this field directly. Use GetAccessTokenAsync().
+        /// </summary>
+        private string _accessToken;
+        private DateTime _accessTokenAge;
+
+        private TsiDataClient(Func<Task<string>> refreshAccessTokenAsync)
         {
-            _accessToken = accessToken;
+            _refreshAccessTokenAsync = refreshAccessTokenAsync;
+            _accessToken = null;
+            _accessTokenAge = DateTime.MinValue;
         }
 
-        public static async Task<TsiDataClient> AadLoginAsApplicationAsync(AzureUtils.ApplicationClientInfo applicationClientInfo)
+        public static TsiDataClient AadLoginAsApplication(AzureUtils.ApplicationClientInfo applicationClientInfo)
         {
-            string accessToken = await AzureUtils.AadLoginAsApplicationAsync("https://api.timeseries.azure.com/", applicationClientInfo);
-            return new TsiDataClient(accessToken);
+            return new TsiDataClient(() => AzureUtils.AadLoginAsApplicationAsync("https://api.timeseries.azure.com/", applicationClientInfo));
         }
 
         public async Task<EnvironmentInfo[]> GetEnvironmentsAsync()
@@ -178,11 +186,22 @@ namespace Engine
                 environmentFqdn ?? "api.timeseries.azure.com",
                 method,
                 path,
-                _accessToken,
+                await GetAccessTokenAsync(),
                 "TsiDataClient",
                 textWriter => { writeRequestBody(textWriter); return "application/json"; },
                 consumeResponseTextReader,
                 new string[] { "api-version=2018-11-01-preview" }); // v1: api-version=2016-12-12 
+        }
+
+        private async Task<string> GetAccessTokenAsync()
+        {
+            if (DateTime.Now - _accessTokenAge >= AccessTokenRefreshAge)
+            {
+                _accessToken = await _refreshAccessTokenAsync();
+                _accessTokenAge = DateTime.Now;
+            }
+
+            return _accessToken;
         }
 
         public sealed class EnvironmentInfo

@@ -89,12 +89,12 @@ namespace Engine
             return stations;
         }
 
-        public async Task UpdateTsmAsync()
+        public async Task<bool> UpdateTsmAsync()
         {
             if (Stations.Count == 0)
             {
                 Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn}): Stations not loaded, model update skipped during this pass");
-                return;
+                return false;
             }
 
             TsiDataClient.BatchResult[] putTypesResult = await Retry.RetryWebCallAsync(
@@ -107,14 +107,14 @@ namespace Engine
             if (putTypesResult == null)
             {
                 Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn})/Type: Update failed, model update skipped during this pass");
-                return;
+                return false;
             }
             else if (putTypesResult.Any(e => !String.IsNullOrWhiteSpace(e.Error)))
             {
                 Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn})/Type: Update failed, model update skipped during this pass. Errors: " +
                                  String.Join(", ", putTypesResult.Where(e => !String.IsNullOrWhiteSpace(e.Error))
                                                                  .Select(e => $"typeId({e.ItemId}) -> {e.Error}")));
-                return;
+                return false;
             }
 
             TsiDataClient.BatchResult[] putHierarchiesResult = await Retry.RetryWebCallAsync(
@@ -127,14 +127,14 @@ namespace Engine
             if (putHierarchiesResult == null)
             {
                 Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn})/Hierarchy: Update failed, model update skipped during this pass");
-                return;
+                return false;
             }
             else if (putHierarchiesResult.Any(e => !String.IsNullOrWhiteSpace(e.Error)))
             {
                 Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn})/Hierarchy: Update failed, model update skipped during this pass. Errors: " +
                                  String.Join(", ", putHierarchiesResult.Where(e => !String.IsNullOrWhiteSpace(e.Error))
                                                                        .Select(e => $"hierarchyId({e.ItemId}) -> {e.Error}")));
-                return;
+                return false;
             }
 
             var stationBatches = new List<List<Station>>();
@@ -151,6 +151,8 @@ namespace Engine
                     .Take(StationsUpdateParalellism)
                     .Select(batch => UpdateTsmInstancesAsync(batch)));
             }
+
+            return true;
         }
 
         private async Task UpdateTsmInstancesAsync(List<Station> stations)

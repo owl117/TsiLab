@@ -33,7 +33,7 @@ namespace Engine
             string tsiEnvironmentFqdn)
         {
             _stationsProcessor = new StastionsProcessor(
-                TsiDataClient.AadLoginAsApplicationAsync(applicationClientInfo).Result,
+                TsiDataClient.AadLoginAsApplication(applicationClientInfo),
                 tsiEnvironmentFqdn,
                 new AzureMapsClient(
                     azureMapsSubscriptionKey,
@@ -162,8 +162,14 @@ namespace Engine
             _stationObservationProcessors = stationObservationProcessors;
 
             Logger.TraceLine("Updating TSM.");
-            await _stationsProcessor.UpdateTsmAsync();
-            Logger.TraceLine($"Updated TSM for {_stationsProcessor.Stations.Count} stations.");
+            if (await _stationsProcessor.UpdateTsmAsync())
+            {
+                Logger.TraceLine($"Updated TSM for {_stationsProcessor.Stations.Count} stations.");
+            }
+            else
+            {
+                Logger.TraceLine("TSM update skipped.");
+            }
         }
     }
 }
