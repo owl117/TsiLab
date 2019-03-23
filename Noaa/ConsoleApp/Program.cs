@@ -24,7 +24,7 @@ namespace ConsoleApp
                     Settings.Loaded.TsiEnvironmentFqdn);
                 
                 mainProcessor.Run().Wait();
-                //mainProcessor.ReloadStationsAndUpdateTsmAsync().Wait(); // test TSM generation without pulling data
+                // mainProcessor.ReloadStationsAndUpdateTsmAsync().Wait(); // test TSM generation without pulling data
             }
             catch (Exception e)
             {

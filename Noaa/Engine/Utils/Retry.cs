@@ -12,7 +12,7 @@ namespace Engine
             string name,
             int numberOfAttempts,
             int waitMilliseconds,
-            bool rethrow,
+            bool rethrowWebException,
             Func<WebException, bool> onWebException = null)
         {
             await RetryWebCallAsync(
@@ -20,7 +20,7 @@ namespace Engine
                 name,
                 numberOfAttempts,
                 waitMilliseconds,
-                rethrow,
+                rethrowWebException,
                 onWebException);
         }
 
@@ -29,7 +29,7 @@ namespace Engine
             string name,
             int numberOfAttempts,
             int waitMilliseconds,
-            bool rethrow,
+            bool rethrowWebException,
             Func<WebException, bool> onWebException = null)
         {
             while (true)
@@ -76,7 +76,7 @@ namespace Engine
 
                     if (numberOfAttempts == 0)
                     {
-                        if (rethrow)
+                        if (rethrowWebException)
                         {
                             throw;
                         }

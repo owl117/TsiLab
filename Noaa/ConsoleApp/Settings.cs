@@ -23,7 +23,8 @@ namespace ConsoleApp
             {
                 if (LoadedCache == null)
                 {
-                    using (StreamReader streamReader = File.OpenText("settings.json"))
+                    string fileName = File.Exists("settings-test.json") ? "settings-test.json" : "settings.json";
+                    using (StreamReader streamReader = File.OpenText(fileName))
                     {
                         LoadedCache = JsonUtils.ParseJson<Settings>(streamReader);
                     }

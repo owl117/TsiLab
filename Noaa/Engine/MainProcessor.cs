@@ -15,8 +15,9 @@ namespace Engine
         /// Throttling is indicated by HTTP 403.
         /// In reality throttling goes away sooner than a day, just needs a long wait. 
         /// </summary>
-        private static TimeSpan DelayOn403 = TimeSpan.FromMinutes(30);
+        private static TimeSpan DelayOnNoaaThrottling = TimeSpan.FromMinutes(30);
         private static TimeSpan UpdateStationsInterval = TimeSpan.FromDays(7);
+        private readonly NoaaClient _noaaClient;
         private readonly StastionsProcessor _stationsProcessor;
         private readonly TsidCheckpointing _stationObservationsCheckpointing;
         private Dictionary<string, StationObservationsProcessor> _stationObservationProcessors;
@@ -32,7 +33,10 @@ namespace Engine
             string azureMapsCacheTableName,
             string tsiEnvironmentFqdn)
         {
+            _noaaClient = new NoaaClient();
+
             _stationsProcessor = new StastionsProcessor(
+                _noaaClient,
                 TsiDataClient.AadLoginAsApplication(applicationClientInfo),
                 tsiEnvironmentFqdn,
                 new AzureMapsClient(
@@ -67,7 +71,7 @@ namespace Engine
                 }
 
                 List<StationObservationsProcessor> stationObservationsProcessors = _stationObservationProcessors.Values.ToList();
-                bool detected403 = false;
+                bool noaaThrottlingDetected = false;
                 while (stationObservationsProcessors.Count > 0 || tasks.Count > 0)
                 {
                     while (stationObservationsProcessors.Count > 0 && 
@@ -86,8 +90,8 @@ namespace Engine
                     }
                     catch (Exception e)
                     {
-                        detected403 |= Retry.UnwrapAggregateException<Detected403Exception>(e) != null;
-                        if (detected403)
+                        noaaThrottlingDetected |= Retry.UnwrapAggregateException<NoaaThrottlingDetected>(e) != null;
+                        if (noaaThrottlingDetected)
                         {
                             // Skip remaining work on this pass.
                             stationObservationsProcessors.Clear();
@@ -100,10 +104,10 @@ namespace Engine
                 }
 
                 TimeSpan delay;
-                if (detected403)
+                if (noaaThrottlingDetected)
                 {
-                    Logger.TraceLine($"PASS {passCount} CANCELLED: Detected 403, waiting until {DateTime.Now + DelayOn403}");
-                    delay = DelayOn403;
+                    Logger.TraceLine($"PASS {passCount} CANCELLED: Detected NOAA throttling, waiting until {DateTime.Now + DelayOnNoaaThrottling}");
+                    delay = DelayOnNoaaThrottling;
                 }
                 else
                 {
@@ -123,40 +127,40 @@ namespace Engine
             Logger.TraceLine("Loading stations.");
             while (true)
             {
-                bool detected403 = false;
+                bool noaaThrottlingDetected = false;
                 try
                 {
                     await _stationsProcessor.ReloadStationsAsync();
                 }
                 catch (Exception e)
                 {
-                    detected403 |= Retry.UnwrapAggregateException<Detected403Exception>(e) != null;
-                    if (!detected403)
+                    noaaThrottlingDetected |= Retry.UnwrapAggregateException<NoaaThrottlingDetected>(e) != null;
+                    if (!noaaThrottlingDetected)
                     {
                         throw;
                     }
                 }
 
-                if (detected403)
+                if (noaaThrottlingDetected)
                 {
-                    Logger.TraceLine($"Detected 403, waiting until {DateTime.Now + DelayOn403}");
-                    await Task.Delay(DelayOn403);
+                    Logger.TraceLine($"Detected NOAA throttling, waiting until {DateTime.Now + DelayOnNoaaThrottling}");
+                    await Task.Delay(DelayOnNoaaThrottling);
                 }
                 else
                 {
                     break;
                 }
             }
-            Logger.TraceLine($"Loaded {_stationsProcessor.Stations.Count} stations.");
+            Logger.TraceLine($"Loaded {_stationsProcessor.Stations.Length} stations.");
 
-            var stationObservationProcessors = new Dictionary<string, StationObservationsProcessor>(_stationsProcessor.Stations.Count);
+            var stationObservationProcessors = new Dictionary<string, StationObservationsProcessor>(_stationsProcessor.Stations.Length);
             foreach (Station station in _stationsProcessor.Stations)
             {
                 stationObservationProcessors.Add(
                     station.Id, 
                     _stationObservationProcessors.ContainsKey(station.Id) 
                         ? _stationObservationProcessors[station.Id] :
-                        new StationObservationsProcessor(station.ShortId, _eventHubClient, _stationObservationsCheckpointing));
+                        new StationObservationsProcessor(station.ShortId, _noaaClient, _eventHubClient, _stationObservationsCheckpointing));
             }
 
             _stationObservationProcessors = stationObservationProcessors;
@@ -164,7 +168,7 @@ namespace Engine
             Logger.TraceLine("Updating TSM.");
             if (await _stationsProcessor.UpdateTsmAsync())
             {
-                Logger.TraceLine($"Updated TSM for {_stationsProcessor.Stations.Count} stations.");
+                Logger.TraceLine($"Updated TSM for {_stationsProcessor.Stations.Length} stations.");
             }
             else
             {

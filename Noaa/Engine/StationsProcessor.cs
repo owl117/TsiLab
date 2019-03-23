@@ -14,94 +14,53 @@ namespace Engine
         private const int StationsUpdateBatchSize = 100;
         private const int StationsUpdateParalellism = 8;
 
+        private readonly NoaaClient _noaaClient;
         private readonly TsiDataClient _tsiDataClient;
         private readonly string _tsiEnvironmentFqdn;
         private readonly AzureMapsClient _azureMapsClient;
 
-        public StastionsProcessor(TsiDataClient tsiDataClient, string tsiEnvironmentFqdn, AzureMapsClient azureMapsClient)
+        public StastionsProcessor(
+            NoaaClient noaaClient,
+            TsiDataClient tsiDataClient,
+            string tsiEnvironmentFqdn,
+            AzureMapsClient azureMapsClient)
         {
-            Stations = new List<Station>();
+            _noaaClient = noaaClient;
             _tsiDataClient = tsiDataClient;
             _tsiEnvironmentFqdn = tsiEnvironmentFqdn;
             _azureMapsClient = azureMapsClient;
+            Stations = new Station[0];
         }
 
-        public List<Station> Stations { get; private set; }
+        public Station[] Stations { get; private set; }
 
         public async Task ReloadStationsAsync()
         {
-            bool detected403 = false;
-            List<Station> stations = await Retry.RetryWebCallAsync(
-                () => HttpUtils.MakeHttpCallAsync("https://api.weather.gov/stations", ParseStations, pretendBrowser: true),
+            Station[] stations = await Retry.RetryWebCallAsync(
+                () => _noaaClient.GetStationsAsync(),
                 "ReloadStations",
                 // Keep retrying until we get the stations.
-                numberOfAttempts: -1, waitMilliseconds: 5000, rethrow: false,
-                onWebException: (WebException e) => 
-                {
-                    HttpWebResponse response = (HttpWebResponse)e.Response;
-                    if (response != null && response.StatusCode == HttpStatusCode.Forbidden)
-                    {
-                        detected403 = true;
-                    }
+                numberOfAttempts: -1, waitMilliseconds: 5000, rethrowWebException: false);
 
-                    // Stop retrying if we get 403.
-                    return !detected403;
-                });
-            
-            if (detected403)
-            {
-                throw new Detected403Exception();
-            }
-
-            if (stations != null)
+            if (stations != null && stations.Length > 0)
             {
                 Stations = stations;
             }
         }
 
-        private static List<Station> ParseStations(TextReader textReader)
-        {
-            JObject jObject = JsonUtils.ParseJson(textReader);
-
-            JArray features = JsonUtils.GetPropertyValueOrNull<JArray>(jObject, "features");
-            var stations = new List<Station>(features.Count);
-
-            foreach (JObject feature in features)
-            {
-                JObject properties = JsonUtils.GetPropertyValueOrNull<JObject>(feature, "properties");
-                Debug.Assert(properties != null && properties["@type"].ToString() == "wx:ObservationStation", 
-                             "properties != null && properties[\"@type\"].ToString() == \"wx:ObservationStation\"");
-
-                JObject geometry = JsonUtils.GetPropertyValueOrNull<JObject>(feature, "geometry");
-                Debug.Assert(geometry != null && geometry["type"].ToString() == "Point", 
-                             "geometry != null && geometry[\"type\"].ToString() == \"Point\"");
-                
-                JArray coordinates = JsonUtils.GetPropertyValueOrNull<JArray>(geometry, "coordinates");
-                stations.Add(new Station(
-                    id: properties["@id"].ToString(),
-                    shortId: properties["stationIdentifier"].ToString(),
-                    name: properties["name"].ToString(),
-                    timeZone: properties["timeZone"].ToString(),
-                    latitude: coordinates[1].Value<double>(),
-                    longitude: coordinates[0].Value<double>()));
-            }
-
-            return stations;
-        }
-
         public async Task<bool> UpdateTsmAsync()
         {
-            if (Stations.Count == 0)
+            if (Stations.Length == 0)
             {
                 Logger.TraceLine($"UpdateTsm({_tsiEnvironmentFqdn}): Stations not loaded, model update skipped during this pass");
                 return false;
             }
 
             TsiDataClient.BatchResult[] putTypesResult = await Retry.RetryWebCallAsync(
-                () => _tsiDataClient.PutTimeSeriesTypesAsync(_tsiEnvironmentFqdn, new [] { StationObservation.TimeSeriesType }),
+                () => _tsiDataClient.PutTimeSeriesTypesAsync(_tsiEnvironmentFqdn, new [] { TsmMapping.StationObservationsType }),
                 "UpdateTsm({_tsiEnvironmentFqdn})/Type",
                 // If failed, skip it during this pass - it will be retried during the next pass.
-                numberOfAttempts: 1, waitMilliseconds: 0, rethrow: false);
+                numberOfAttempts: 1, waitMilliseconds: 0, rethrowWebException: false);
 
             // If failed, skip it during this pass - it will be retried during the next pass.
             if (putTypesResult == null)
@@ -118,10 +77,10 @@ namespace Engine
             }
 
             TsiDataClient.BatchResult[] putHierarchiesResult = await Retry.RetryWebCallAsync(
-                () => _tsiDataClient.PutTimeSeriesHierarchiesAsync(_tsiEnvironmentFqdn, new [] { Station.TimeSeriesHierarchy }),
+                () => _tsiDataClient.PutTimeSeriesHierarchiesAsync(_tsiEnvironmentFqdn, new [] { TsmMapping.GeoLocationMetadata.GeoLocationsHierarchy }),
                 "UpdateTsm({_tsiEnvironmentFqdn})/Hierarchy",
                 // If failed, skip it during this pass - it will be retried during the next pass.
-                numberOfAttempts: 1, waitMilliseconds: 0, rethrow: false);
+                numberOfAttempts: 1, waitMilliseconds: 0, rethrowWebException: false);
 
             // If failed, skip it during this pass - it will be retried during the next pass.
             if (putHierarchiesResult == null)
@@ -138,7 +97,7 @@ namespace Engine
             }
 
             var stationBatches = new List<List<Station>>();
-            for (int i = 0; i < Stations.Count / StationsUpdateBatchSize + 1; ++i)
+            for (int i = 0; i < Stations.Length / StationsUpdateBatchSize + 1; ++i)
             {
                 stationBatches.Add(Stations.Skip(i * StationsUpdateBatchSize).Take(StationsUpdateBatchSize).ToList());
             }
@@ -173,7 +132,7 @@ namespace Engine
                 () => _tsiDataClient.PutTimeSeriesInstancesAsync(_tsiEnvironmentFqdn, instances.ToArray()),
                 $"UpdateTsm({_tsiEnvironmentFqdn})/Instances",
                 // If failed, skip it during this pass - it will be retried during the next pass.
-                numberOfAttempts: 1, waitMilliseconds: 0, rethrow: false);
+                numberOfAttempts: 1, waitMilliseconds: 0, rethrowWebException: false);
 
             // If failed, skip it during this pass - it will be retried during the next pass.
             if (putTimeSeriesInstances == null)
@@ -206,24 +165,24 @@ namespace Engine
                 () => _azureMapsClient.SearchAddressReverseAsync(station.Latitude.Value, station.Longitude.Value),
                 $"UpdateTsm({_tsiEnvironmentFqdn})/ResolveStationAddress({station.ShortId})",
                 // Try few times. If failed, skip it - this station will have no address.
-                numberOfAttempts: 3, waitMilliseconds: 500, rethrow: false) : null;
+                numberOfAttempts: 3, waitMilliseconds: 500, rethrowWebException: false) : null;
 
             if (address != null)
             {
-                instanceFields.Add(Station.InstanceFieldName_Country, address.Country);
-                instanceFields.Add(Station.InstanceFieldName_CountrySubdivisionName, address.CountrySubdivisionName);
-                instanceFields.Add(Station.InstanceFieldName_CountrySecondarySubdivision, address.CountrySecondarySubdivision);
-                instanceFields.Add(Station.InstanceFieldName_Municipality, address.Municipality);
-                instanceFields.Add(Station.InstanceFieldName_PostalCode, address.PostalCode);
+                instanceFields.Add(TsmMapping.GeoLocationMetadata.InstanceFieldName_Country, address.Country);
+                instanceFields.Add(TsmMapping.GeoLocationMetadata.InstanceFieldName_CountrySubdivisionName, address.CountrySubdivisionName);
+                instanceFields.Add(TsmMapping.GeoLocationMetadata.InstanceFieldName_CountrySecondarySubdivision, address.CountrySecondarySubdivision);
+                instanceFields.Add(TsmMapping.GeoLocationMetadata.InstanceFieldName_Municipality, address.Municipality);
+                instanceFields.Add(TsmMapping.GeoLocationMetadata.InstanceFieldName_PostalCode, address.PostalCode);
             }
 
             return new TimeSeriesInstance(
                 timeSeriesId: new object[] { station.Id },
-                typeId: StationObservation.TimeSeriesType.Id,
+                typeId: TsmMapping.StationObservationsType.Id,
                 name: $"Observations {station.ShortId} ({station.Name})",
                 description: "Weather observations for " + station.Name,
                 instanceFields: instanceFields,
-                hierarchyIds: new [] { Station.TimeSeriesHierarchy.Id });
+                hierarchyIds: new [] { TsmMapping.GeoLocationMetadata.GeoLocationsHierarchy.Id });
         }
     }
 }
