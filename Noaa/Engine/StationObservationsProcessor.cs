@@ -13,6 +13,7 @@ namespace Engine
     public sealed class StationObservationsProcessor
     {
         private static TimeSpan DefaultSleepInterval = TimeSpan.FromMinutes(20);
+        private static Random RetryDelayRandom = new Random();
         private readonly NoaaClient _noaaClient;
         private readonly EventHubClient _eventHubClient;
         private readonly TsidCheckpointing _checkpointing;
@@ -55,8 +56,8 @@ namespace Engine
             StationObservation[] observations = await Retry.RetryWebCallAsync(
                 () => _noaaClient.GetStationObservationsAsync(StationShortId, pullFromTimestamp),
                 $"ProcessObservations({StationShortId})",
-                // If failed, skip it during this pass - it will be retried during the next pass.
-                numberOfAttempts: 1, waitMilliseconds: 0, rethrowWebException: false);
+                // Sometimes it fails with timeout, try it second time with some random delay, otherwise let it fail and skip during this pass.
+                numberOfAttempts: 2, waitMilliseconds: RetryDelayRandom.Next(500, 1500), rethrowWebException: false);
 
             if (observations == null)
             {
