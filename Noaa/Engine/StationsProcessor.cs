@@ -11,8 +11,8 @@ namespace Engine
 {
     public sealed class StastionsProcessor
     {
-        private const int StationsUpdateBatchSize = 100;
-        private const int StationsUpdateParalellism = 8;
+        private const int StationsProcessingBatchSize = 100;
+        private const int StationsProcessingParalellism = 8;
 
         private readonly NoaaClient _noaaClient;
         private readonly TsiDataClient _tsiDataClient;
@@ -96,37 +96,69 @@ namespace Engine
                 return false;
             }
 
-            var stationBatches = new List<List<Station>>();
-            for (int i = 0; i < Stations.Length / StationsUpdateBatchSize + 1; ++i)
-            {
-                stationBatches.Add(Stations.Skip(i * StationsUpdateBatchSize).Take(StationsUpdateBatchSize).ToList());
-            }
-
-            for (int i = 0; i < stationBatches.Count / StationsUpdateParalellism + 1; ++i)
-            {
-                await Task.WhenAll(
-                    stationBatches
-                    .Skip(i * StationsUpdateParalellism)
-                    .Take(StationsUpdateParalellism)
-                    .Select(batch => UpdateTsmInstancesAsync(batch)));
-            }
+            await ProcessStationsInBatches(UpdateTsmInstancesAsync);
 
             return true;
         }
 
+        public async Task<string> GenerateReferenceDataJsonAsync()
+        {
+            if (Stations.Length == 0)
+            {
+                Logger.TraceLine($"GenerateReferenceData: Stations not loaded, reference data generation skipped");
+            }
+
+            var instances = new List<List<TimeSeriesInstance>>(); 
+            await ProcessStationsInBatches(
+                async stationsBatch => 
+                {
+                    var batchInstances = new List<TimeSeriesInstance>();
+                    instances.Add(batchInstances);
+                    batchInstances.AddRange(await ConvertStationsToTimeSeriesInstancesAsync(stationsBatch));
+                });
+
+            Dictionary<string, string>[] referenceDataItems = 
+                instances.SelectMany(batch => batch)
+                         .Select(
+                             instance =>
+                             {
+                                 var referenceDataItem = new Dictionary<string, string>(instance.InstanceFields);
+                                 referenceDataItem["StationId"] = (string)instance.TimeSeriesId.Single();
+                                 referenceDataItem["Name"] = instance.Name;
+                                 referenceDataItem["Description"] = instance.Description;
+                                 return referenceDataItem;
+                             })
+                         .ToArray();
+            
+            using (var stringWriter = new StringWriter())
+            {
+                JsonUtils.WriteJson(stringWriter, referenceDataItems);
+                stringWriter.Flush();
+                return stringWriter.ToString();
+            }
+        }
+
+        private async Task ProcessStationsInBatches(Func<List<Station>, Task> processBatch)
+        {
+            var stationBatches = new List<List<Station>>();
+            for (int i = 0; i < Stations.Length / StationsProcessingBatchSize + 1; ++i)
+            {
+                stationBatches.Add(Stations.Skip(i * StationsProcessingBatchSize).Take(StationsProcessingBatchSize).ToList());
+            }
+
+            for (int i = 0; i < stationBatches.Count / StationsProcessingParalellism + 1; ++i)
+            {
+                await Task.WhenAll(
+                    stationBatches
+                    .Skip(i * StationsProcessingParalellism)
+                    .Take(StationsProcessingParalellism)
+                    .Select(batch => processBatch(batch)));
+            }
+        }
+
         private async Task UpdateTsmInstancesAsync(List<Station> stations)
         {
-            // Convert station to time series instances.
-            // Some may be skipped due to errors, which is fine - they will be retried during the next pass.
-            var instances = new List<TimeSeriesInstance>();
-            foreach (Station station in stations)
-            {
-                TimeSeriesInstance instance = await ConvertToTimeSeriesInstanceAsync(station);
-                if (instance != null)
-                {
-                    instances.Add(instance);
-                }
-            }
+            List<TimeSeriesInstance> instances = await ConvertStationsToTimeSeriesInstancesAsync(stations);
 
             TsiDataClient.BatchResult[] putTimeSeriesInstances =  await Retry.RetryWebCallAsync(
                 () => _tsiDataClient.PutTimeSeriesInstancesAsync(_tsiEnvironmentFqdn, instances.ToArray()),
@@ -153,7 +185,24 @@ namespace Engine
             }
         }
 
-        private async Task<TimeSeriesInstance> ConvertToTimeSeriesInstanceAsync(Station station)
+        private async Task<List<TimeSeriesInstance>> ConvertStationsToTimeSeriesInstancesAsync(List<Station> stations)
+        {
+            // Convert stations to time series instances.
+            // Some may be skipped due to errors, which is fine - they will be retried during the next pass.
+            var instances = new List<TimeSeriesInstance>();
+            foreach (Station station in stations)
+            {
+                TimeSeriesInstance instance = await ConvertStationToTimeSeriesInstanceAsync(station);
+                if (instance != null)
+                {
+                    instances.Add(instance);
+                }
+            }
+
+            return instances;
+        }
+
+        private async Task<TimeSeriesInstance> ConvertStationToTimeSeriesInstanceAsync(Station station)
         {
             var instanceFields = new Dictionary<string, string>()
             {

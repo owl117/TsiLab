@@ -23,8 +23,9 @@ namespace ConsoleApp
                     Settings.Loaded.AzureMapsCacheTableName,
                     Settings.Loaded.TsiEnvironmentFqdn);
                 
-                mainProcessor.Run().Wait();
+                // mainProcessor.Run().Wait();
                 // mainProcessor.ReloadStationsAndUpdateTsmAsync().Wait(); // test TSM generation without pulling data
+                mainProcessor.LoadStationsAndGenerateReferenceDataJsonAsync("referenceData.json").Wait(); // generate ref data without pulling data
             }
             catch (Exception e)
             {

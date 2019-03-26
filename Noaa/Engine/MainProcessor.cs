@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Azure.EventHubs;
@@ -174,6 +175,17 @@ namespace Engine
             {
                 Logger.TraceLine("TSM update skipped.");
             }
+        }
+
+        public async Task LoadStationsAndGenerateReferenceDataJsonAsync(string fileName)
+        {
+            Logger.TraceLine("Loading stations.");
+            await _stationsProcessor.ReloadStationsAsync();
+            Logger.TraceLine($"Loaded {_stationsProcessor.Stations.Length} stations.");
+
+            Logger.TraceLine("Generating reference data JSON.");
+            await File.WriteAllTextAsync(fileName, await _stationsProcessor.GenerateReferenceDataJsonAsync());
+            Logger.TraceLine($"Generated reference data for {_stationsProcessor.Stations.Length} stations.");
         }
     }
 }
