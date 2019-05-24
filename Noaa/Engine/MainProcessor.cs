@@ -57,7 +57,9 @@ namespace Engine
         {
             DateTime? updateStationsTimestamp = null;
 
-            var tasks = new List<Task>(HttpUtils.DefaultConnectionLimit);
+            const int paralallism = 3;
+
+            var tasks = new List<Task>(paralallism);
             int passCount = 1;
             while (true)
             {
@@ -71,12 +73,12 @@ namespace Engine
                     updateStationsTimestamp = DateTime.Now;
                 }
 
-                List<StationObservationsProcessor> stationObservationsProcessors = _stationObservationProcessors.Values.ToList();
+                List<StationObservationsProcessor> stationObservationsProcessors = 
+                    _stationObservationProcessors.Values.OrderBy(p => p.GoodNextTimeToProcess).ToList();
                 bool noaaThrottlingDetected = false;
                 while (stationObservationsProcessors.Count > 0 || tasks.Count > 0)
                 {
-                    while (stationObservationsProcessors.Count > 0 && 
-                           tasks.Count < System.Net.ServicePointManager.DefaultConnectionLimit)
+                    while (stationObservationsProcessors.Count > 0 && tasks.Count < paralallism)
                     {
                         StationObservationsProcessor stationObservationsProcessor = stationObservationsProcessors[0];
                         tasks.Add(stationObservationsProcessor.ProsessStationObservationsAsync());
@@ -107,14 +109,15 @@ namespace Engine
                 TimeSpan delay;
                 if (noaaThrottlingDetected)
                 {
-                    Logger.TraceLine($"PASS {passCount} CANCELLED: Detected NOAA throttling, waiting until {DateTime.Now + DelayOnNoaaThrottling}");
                     delay = DelayOnNoaaThrottling;
+                    Logger.TraceLine($"PASS {passCount} CANCELLED: Detected NOAA throttling, waiting until {DateTime.Now + delay}");
                 }
                 else
                 {
-                    Logger.TraceLine($"PASS {passCount} DONE: Elapsed {stopwatch.Elapsed}");
-                    delay = (_stationObservationProcessors.Values.Min(sop => sop.GoodNextTimeToProcess) - DateTime.Now) + TimeSpan.FromMinutes(1);
+
+                    delay = Utils.Max(_stationObservationProcessors.Values.Min(sop => sop.GoodNextTimeToProcess) - DateTime.Now, TimeSpan.Zero);
                     delay = NormalPassDelay > delay ? NormalPassDelay : delay;
+                    Logger.TraceLine($"PASS {passCount} DONE: Elapsed {stopwatch.Elapsed}, next in {delay}");
                 }
 
                 ++passCount;

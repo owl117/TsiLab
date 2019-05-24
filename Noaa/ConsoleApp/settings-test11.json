@@ -1,0 +1,24 @@
+{
+    "ApplicationClientInfo": {
+        "DirectoryId": "6e87356f-9608-4459-ae22-74c036cec56d",
+        "ClientId": "fc8f4854-00c5-4530-a593-e3099887db4e",
+        "ClientSecret":"CCDy5uF]L/?WJJqKsMcMkwU9xCKbg*67"
+    },
+    "ApplicationClientInfo_CrystalPM": {
+        "DirectoryId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+        "ClientId": "9feeebb5-9262-42e6-9e0d-11f9480a0439",
+        "ClientSecret":"m00N+brDRRCsln/qzEkXPETfMmcjwILzf3xajlooXcc="
+    },
+    "ApplicationInsightsInstrumentationKey": "b9b46b31-7fa0-4b80-94c9-bd8664f2097b",
+    "StorageAccountInfo": {
+        "StorageAccountName": "tsilnoaadp",
+        "StorageAccountKey": "+315fERgk51sMCMgeWyoraiN6y7yLCO2dJWHtJU8ZUJwWMBQVqjKpXp1O/QCve3UwgM5TMqrNX5C7u4mHUTbog=="
+    },
+    "TsidCheckpointingTableName": "tsidcheckpointstest",
+    "StationObservationsCheckpointingPartitionKey": "stations",
+    "EventHubConnectionString": "Endpoint=sb://tsil-noaa.servicebus.windows.net/;SharedAccessKeyName=Send;SharedAccessKey=BNQ+t200snaMB556n/YiucwUQbsurV7WcNa7UmQ9cVw=;EntityPath=data-test",
+    "AzureMapsSubscriptionKey": "HkKFS4dpGxJDLt1BCyKXnuZU0DbbVTkeiqtUcvWHYh0",
+    "AzureMapsCacheTableName": "azuremapscachetest",
+    "TsiEnvironmentFqdn": "30966673-61f5-42ba-bb65-9b4d6045daeb.env.timeseries.azure.com"
+}
+

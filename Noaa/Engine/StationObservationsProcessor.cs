@@ -53,11 +53,17 @@ namespace Engine
                 // For brand-new stations start with one day back. 
                 ?? DateTimeOffset.UtcNow - TimeSpan.FromDays(1);
 
+            bool traceGetStationObservationsAsync = false;
             StationObservation[] observations = await Retry.RetryWebCallAsync(
-                () => _noaaClient.GetStationObservationsAsync(StationShortId, pullFromTimestamp),
+                () => 
+                {
+                    // Trace on the second+ attemp.
+                    bool trace = traceGetStationObservationsAsync;
+                    traceGetStationObservationsAsync = true;
+                    return _noaaClient.GetStationObservationsAsync(StationShortId, pullFromTimestamp, trace);
+                },
                 $"ProcessObservations({StationShortId})",
-                // Sometimes it fails with timeout, try it second time with some random delay, otherwise let it fail and skip during this pass.
-                numberOfAttempts: 2, waitMilliseconds: RetryDelayRandom.Next(500, 1500), rethrowWebException: false);
+                numberOfAttempts: 5, waitMilliseconds: RetryDelayRandom.Next(2000, 10000), rethrowWebException: false);
 
             if (observations == null)
             {
@@ -72,11 +78,11 @@ namespace Engine
             {
                 TimeSpan sleepInterval = (DateTime.Now - _lastSuccessfulPullTime) / 2;
                 sleepInterval = DefaultSleepInterval < sleepInterval ? DefaultSleepInterval : sleepInterval;
-                GoodNextTimeToProcess = DateTime.Now + sleepInterval;
                 _lastSuccessfulPullTime = DateTime.Now;
 
                 await SendDataToEventHub(observations);
 
+                GoodNextTimeToProcess = _lastSuccessfulPullTime + sleepInterval;
                 _lastCommittedTimestamp = observations.Max(o => o.Timestamp);
                 await _checkpointing.SetLastCommittedTimestampAsync(StationShortId, _lastCommittedTimestamp.Value);
 
@@ -88,9 +94,10 @@ namespace Engine
             else
             {
                 // We've go here because there is no new data.
+
+                GoodNextTimeToProcess = DateTimeOffset.Now + DefaultSleepInterval / 2;
                 _lastCommittedTimestamp = pullFromTimestamp;
                 await _checkpointing.SetLastCommittedTimestampAsync(StationShortId, _lastCommittedTimestamp.Value);
-                GoodNextTimeToProcess = DateTimeOffset.Now + DefaultSleepInterval / 2;
 
                 Logger.TraceLine($"ProcessObservations({StationShortId}): No new data, available for the next pull in {(GoodNextTimeToProcess - DateTime.Now).TotalMinutes:N} minutes");
             }
@@ -98,17 +105,13 @@ namespace Engine
 
         private async Task SendDataToEventHub(StationObservation[] observations)
         {
-            EventData eventData;
-            using (var memoryStream = new MemoryStream())
-            using (var streamWriter = new StreamWriter(memoryStream))
-            {
-                JsonUtils.WriteJson(streamWriter, observations);
-                await streamWriter.FlushAsync();
-                await memoryStream.FlushAsync();
-                eventData = new EventData(memoryStream.ToArray());
-            }
+            List<byte[]> partitions = AzureUtils.SerializeToJsonForEventHub(observations);
 
-            await _eventHubClient.SendAsync(eventData);
+            foreach (byte[] partition in partitions)
+            {
+                EventData eventData = new EventData(partition);
+                await _eventHubClient.SendAsync(eventData);
+            }
         }
     }
 }

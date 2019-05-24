@@ -20,12 +20,21 @@ namespace Engine
                 ParseGetStationsResponse);
         }
 
-        public async Task<StationObservation[]> GetStationObservationsAsync(string stationShortId, DateTimeOffset start)
+        public async Task<StationObservation[]> GetStationObservationsAsync(
+            string stationShortId,
+            DateTimeOffset start,
+            bool trace = false)
         {
-            return await MakeNoaaApiCall(
+            string requestUriString = 
                 $"https://api.weather.gov/stations/{stationShortId}/observations?start=" + 
-                    Uri.EscapeDataString(start.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:sszzz")),
-                ParseGetStationObservationsResponse);
+                Uri.EscapeDataString(start.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:sszzz"));
+
+            if (trace)
+            {
+                Logger.TraceLine($"GetStationObservationsAsync({requestUriString})");
+            }
+
+            return await MakeNoaaApiCall(requestUriString, ParseGetStationObservationsResponse);
         }
 
         private static Station[] ParseGetStationsResponse(TextReader textReader)
@@ -83,7 +92,7 @@ namespace Engine
                                               relativeHumidity: f.properties.relativeHumidity,
                                               windChill: f.properties.windChill,
                                               heatIndex: f.properties.heatIndex,
-                                              cloudLayer0: f.properties.cloudLayers.FirstOrDefault()))
+                                              cloudLayer0: f.properties.cloudLayers?.FirstOrDefault()))
                                           .ToArray();
             }
             else
